@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XIPU Gateway</title>
+<style>
+:root {
+  --bg: #0b0d12; --panel: #12151c; --panel-2: #171b24; --line: #232a36; --line-2: #2d3644;
+  --text: #e6e9ef; --muted: #8b95a7; --faint: #5b6577;
+  --accent: #7c9cff; --ok: #3ecf8e; --warn: #f5b84b; --err: #ff6b6b;
+  --c-system: #a78bfa; --c-user: #4cc2ff; --c-assistant: #f5b84b; --c-tool: #3ecf8e; --c-protocol: #f472b6;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", Inter, sans-serif;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f5f6f9; --panel: #ffffff; --panel-2: #f8f9fb; --line: #e3e6ec; --line-2: #d5d9e1;
+    --text: #151922; --muted: #5d6677; --faint: #9aa2b1;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f5f6f9; --panel: #ffffff; --panel-2: #f8f9fb; --line: #e3e6ec; --line-2: #d5d9e1;
+  --text: #151922; --muted: #5d6677; --faint: #9aa2b1;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); display: flex; flex-direction: column; overflow: hidden; }
+button { font: inherit; color: inherit; }
+.mono { font-family: var(--mono); }
+
+/* header */
+header { display: flex; align-items: center; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex: none; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 14px; letter-spacing: .2px; white-space: nowrap; }
+.brand .logo { width: 22px; height: 22px; border-radius: 6px; background: conic-gradient(from 200deg, var(--c-user), var(--c-protocol), var(--c-assistant), var(--c-tool), var(--c-user)); position: relative; }
+.brand .logo::after { content: ""; position: absolute; inset: 5px; border-radius: 3px; background: var(--bg); }
+.brand small { color: var(--muted); font-weight: 500; }
+.pills { display: flex; gap: 8px; margin-left: auto; flex-wrap: wrap; justify-content: flex-end; }
+.pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pill b { color: var(--text); font-weight: 600; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); }
+.dot.err { background: var(--err); }
+
+/* pipeline */
+.pipeline { flex: none; display: grid; grid-template-columns: repeat(6, 1fr); gap: 0; padding: 14px 16px 12px; border-bottom: 1px solid var(--line); position: relative; }
+.node { position: relative; padding: 0 8px; text-align: center; }
+.node .ring { margin: 0 auto 6px; width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--line-2); display: grid; place-items: center; background: var(--panel); color: var(--muted); font-size: 15px; transition: all .25s; position: relative; z-index: 1; }
+.node .name { font-weight: 600; font-size: 12px; }
+.node .sub { color: var(--faint); font-size: 11px; }
+.node .metric { margin-top: 4px; font-family: var(--mono); font-size: 11px; color: var(--muted); min-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.node:not(:last-child)::after { content: ""; position: absolute; top: 17px; left: calc(50% + 20px); right: calc(-50% + 20px); height: 1.5px; background: var(--line-2); }
+.node.done .ring { border-color: color-mix(in srgb, var(--accent) 60%, var(--line-2)); color: var(--text); }
+.node.done:not(:last-child)::after { background: color-mix(in srgb, var(--accent) 45%, var(--line-2)); }
+.node.active .ring { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 18%, transparent); }
+.node.active .ring::before { content: ""; position: absolute; inset: -6px; border-radius: 50%; border: 1.5px solid var(--accent); animation: ping 1.2s ease-out infinite; }
+.node.fail .ring { border-color: var(--err); color: var(--err); }
+@keyframes ping { from { opacity: .7; transform: scale(.85); } to { opacity: 0; transform: scale(1.35); } }
+.packet { position: absolute; top: 31px; width: 9px; height: 9px; margin-left: -4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 12px var(--accent); z-index: 2; pointer-events: none; }
+
+/* layout */
+.main { flex: 1; display: grid; grid-template-columns: 230px 1fr; min-height: 0; }
+aside { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+aside .head { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+.follow { border: 1px solid var(--line); background: none; border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; color: var(--muted); }
+.follow.on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+#list { overflow-y: auto; flex: 1; }
+.req { padding: 9px 12px; border-bottom: 1px solid var(--line); cursor: pointer; display: grid; gap: 2px; }
+.req:hover { background: var(--panel-2); }
+.req.sel { background: color-mix(in srgb, var(--accent) 10%, var(--panel)); box-shadow: inset 2px 0 var(--accent); }
+.req .r1 { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; }
+.req .model { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.req .r2 { color: var(--faint); font-size: 11px; display: flex; justify-content: space-between; gap: 6px; }
+.badge { font-size: 10.5px; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; white-space: nowrap; line-height: 16px; }
+.b-live { color: var(--accent); } .b-stop { color: var(--ok); } .b-tool { color: var(--c-protocol); } .b-err { color: var(--err); }
+.empty { color: var(--faint); padding: 24px 14px; font-size: 12px; text-align: center; }
+
+.detail { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.waterfall { flex: none; padding: 10px 16px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+.waterfall .bar { flex: 1; height: 10px; border-radius: 5px; background: var(--panel-2); position: relative; overflow: hidden; border: 1px solid var(--line); }
+.waterfall .seg { position: absolute; top: 0; bottom: 0; transition: width .2s; }
+.waterfall .legend { display: flex; gap: 10px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.waterfall .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -0.5px; }
+.cols { flex: 1; display: grid; grid-template-columns: 1fr 1.15fr 1.25fr; min-height: 0; }
+.col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-right: 1px solid var(--line); }
+.col:last-child { border-right: none; }
+.col > h3 { margin: 0; padding: 10px 14px 8px; font-size: 12px; font-weight: 650; display: flex; align-items: baseline; gap: 8px; flex: none; }
+.col > h3 .step { color: var(--accent); font-family: var(--mono); }
+.col > h3 small { color: var(--faint); font-weight: 500; margin-left: auto; font-family: var(--mono); }
+.scroll { overflow-y: auto; padding: 0 14px 14px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.scroll > * { flex: none; }
+.meta { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 5px; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+.chip b { color: var(--text); font-weight: 600; }
+
+.card { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; overflow: hidden; transition: box-shadow .15s, border-color .15s; }
+.card .ch { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 11.5px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.card .ch .role { font-weight: 650; text-transform: uppercase; letter-spacing: .4px; font-size: 10.5px; }
+.card .ch .n { margin-left: auto; font-family: var(--mono); color: var(--faint); }
+.card pre { margin: 0; padding: 8px 10px; font: 11.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; color: var(--text); }
+.card.clamp pre { max-height: 7.6em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 60%, transparent); mask-image: linear-gradient(#000 60%, transparent); }
+.card.clamp { cursor: zoom-in; }
+.card.hl { border-color: var(--hl, var(--accent)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--hl, var(--accent)) 30%, transparent); }
+.card.role-system { --hl: var(--c-system); } .role-system .role { color: var(--c-system); }
+.card.role-developer { --hl: var(--c-system); } .role-developer .role { color: var(--c-system); }
+.card.role-user { --hl: var(--c-user); } .role-user .role { color: var(--c-user); }
+.card.role-assistant { --hl: var(--c-assistant); } .role-assistant .role { color: var(--c-assistant); }
+.card.role-tool { --hl: var(--c-tool); } .role-tool .role { color: var(--c-tool); }
+.card.role-protocol { --hl: var(--c-protocol); } .role-protocol .role { color: var(--c-protocol); }
+.card.role-frame { --hl: var(--faint); opacity: .75; } .role-frame .role { color: var(--faint); }
+.card.seg { border-left: 3px solid var(--hl, var(--line)); }
+.tools { display: flex; flex-wrap: wrap; gap: 5px; }
+.tools .chip { color: var(--c-protocol); border-color: color-mix(in srgb, var(--c-protocol) 35%, var(--line)); }
+
+.stream pre { max-height: 260px; overflow-y: auto; }
+.stream.reasoning pre { color: var(--muted); font-style: italic; }
+.caret::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.arrow { text-align: center; color: var(--faint); font-size: 11px; letter-spacing: .5px; }
+.arrow::before { content: "↓ "; color: var(--accent); }
+.call { border: 1px solid color-mix(in srgb, var(--c-protocol) 40%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--c-protocol) 6%, var(--panel)); }
+.call .ch { color: var(--c-protocol); border-bottom-color: color-mix(in srgb, var(--c-protocol) 25%, var(--line)); }
+.final { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.final div { background: var(--panel); padding: 7px 10px; }
+.final small { display: block; color: var(--faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .4px; }
+.final b { font-family: var(--mono); font-size: 12.5px; font-weight: 600; }
+.note { font-size: 11.5px; color: var(--warn); border: 1px dashed color-mix(in srgb, var(--warn) 50%, var(--line)); border-radius: 8px; padding: 6px 10px; }
+.errbox { color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, var(--line)); }
+.hint { color: var(--faint); font-size: 12px; padding: 20px 4px; text-align: center; }
+
+@media (max-width: 900px) {
+  .cols { grid-template-columns: 1fr; overflow-y: auto; }
+  .col { border-right: none; border-bottom: 1px solid var(--line); min-height: 320px; }
+  .main { grid-template-columns: 1fr; }
+  aside { display: none; }
+  .pipeline { grid-template-columns: repeat(3, 1fr); row-gap: 12px; }
+  .node:nth-child(3)::after { display: none; }
+  .pills .pill:nth-child(n+3) { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo"></span>XIPU Gateway <small>OpenAI ⇄ 君谋 translation, live</small></div>
+  <div class="pills">
+    <span class="pill"><span class="dot" id="liveDot"></span><span id="liveTxt">connecting</span></span>
+    <span class="pill">token <b id="tokenTxt">–</b></span>
+    <span class="pill">warm sessions <b id="poolTxt">–</b></span>
+    <span class="pill">requests <b id="countTxt">0</b></span>
+  </div>
+</header>
+
+<section class="pipeline" id="pipeline">
+  <div class="node" data-stage="request"><div class="ring">⌁</div><div class="name">Client</div><div class="sub">OpenAI request</div><div class="metric" data-m="request"></div></div>
+  <div class="node" data-stage="translate"><div class="ring">⇄</div><div class="name">Translate</div><div class="sub">messages → transcript</div><div class="metric" data-m="translate"></div></div>
+  <div class="node" data-stage="session"><div class="ring">◎</div><div class="name">Session</div><div class="sub">warm pool</div><div class="metric" data-m="session"></div></div>
+  <div class="node" data-stage="upstream"><div class="ring">☁</div><div class="name">XIPU AI</div><div class="sub">SSE stream</div><div class="metric" data-m="upstream"></div></div>
+  <div class="node" data-stage="parse"><div class="ring">{ }</div><div class="name">Parse</div><div class="sub">envelope → tool_calls</div><div class="metric" data-m="parse"></div></div>
+  <div class="node" data-stage="respond"><div class="ring">✓</div><div class="name">Respond</div><div class="sub">OpenAI chunks</div><div class="metric" data-m="respond"></div></div>
+</section>
+
+<div class="main">
+  <aside>
+    <div class="head"><span>Requests</span><button class="follow on" id="followBtn" title="Always show the newest request">● follow live</button></div>
+    <div id="list"><div class="empty">Waiting for requests…<br>POST /v1/chat/completions</div></div>
+  </aside>
+  <section class="detail">
+    <div class="waterfall">
+      <div class="bar" id="bar"></div>
+      <div class="legend">
+        <span><i style="background:var(--c-system)"></i>queue</span>
+        <span><i style="background:var(--faint)"></i>wait</span>
+        <span><i style="background:var(--c-user)"></i>reasoning</span>
+        <span><i style="background:var(--c-assistant)"></i>output</span>
+        <span id="totalTxt" class="mono">–</span>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="col"><h3><span class="step">①</span> OpenAI request <small id="aStat"></small></h3><div class="scroll" id="colA"><div class="hint">Select or send a request</div></div></div>
+      <div class="col"><h3><span class="step">②</span> Upstream transcript <small id="bStat"></small></h3><div class="scroll" id="colB"></div></div>
+      <div class="col"><h3><span class="step">③</span> Upstream stream → OpenAI response <small id="cStat"></small></h3><div class="scroll" id="colC"></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const KEY = new URLSearchParams(location.search).get("key");
+const qs = KEY ? `?key=${encodeURIComponent(KEY)}` : "";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtMs = (ms) => ms == null ? "–" : ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+const fmtN = (n) => n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+const text = (c) => typeof c === "string" ? c : Array.isArray(c) ? c.map((p) => p.type === "text" ? p.text : `[${p.type}]`).join("\n") : "";
+
+const traces = new Map();
+let selected = null;
+let follow = true;
+
+function ingest(ev) {
+  let t = traces.get(ev.traceId);
+  if (!t) {
+    t = { id: ev.traceId, startedAt: ev.at - ev.t, events: [], done: false };
+    traces.set(ev.traceId, t);
+  }
+  const last = t.events.at(-1);
+  if ((ev.stage === "content" || ev.stage === "reasoning") && last?.stage === ev.stage) {
+    last.data.text = (last.data.text ?? "") + (ev.data.text ?? "");
+    last.data.until = ev.t;
+  } else {
+    t.events.push({ ...ev, data: { ...ev.data } });
+  }
+  if (ev.stage === "response" || ev.stage === "error") t.done = true;
+  return t;
+}
+
+function view(t) {
+  const v = { id: t.id, startedAt: t.startedAt, done: t.done, reasoning: "", content: "" };
+  for (const e of t.events) {
+    switch (e.stage) {
+      case "request": v.req = e.data; v.tReq = e.t; break;
+      case "translate": if (e.data.segments) { v.tr = e.data; v.tTr = e.t; } else if (e.data.warning) v.warning = e.data.warning; break;
+      case "session": v.ses = e.data; v.tSes = e.t; break;
+      case "reasoning": v.reasoning += e.data.text ?? ""; v.tR0 ??= e.t; v.tR1 = e.data.until ?? e.t; break;
+      case "content": v.content += e.data.text ?? ""; v.tC0 ??= e.t; v.tC1 = e.data.until ?? e.t; break;
+      case "record": v.rec = e.data; break;
+      case "tool_calls": v.calls = e.data.calls; break;
+      case "response": v.res = e.data; v.tEnd = e.t; break;
+      case "error": v.err = e.data; v.tEnd = e.t; break;
+    }
+  }
+  v.stage = v.err ? "error" : v.res ? "respond" : v.rec ? "parse" : (v.tR0 != null || v.tC0 != null || v.ses) ? "upstream" : v.tr ? "session" : "translate";
+  return v;
+}
+
+// ---- pipeline ----
+const ORDER = ["request", "translate", "session", "upstream", "parse", "respond"];
+let lastStageIdx = -1;
+function renderPipeline(v) {
+  const idx = v ? (v.stage === "error" ? ORDER.indexOf(errorStage(v)) : ORDER.indexOf(v.stage)) : -1;
+  document.querySelectorAll(".node").forEach((n, i) => {
+    n.classList.toggle("done", v && (i < idx || (v.done && !v.err)));
+    n.classList.toggle("active", v && !v.done && i === idx);
+    n.classList.toggle("fail", v && !!v.err && i === idx);
+  });
+  if (v && idx > lastStageIdx && lastStageIdx >= 0 && !v.done) firePacket(lastStageIdx, idx);
+  lastStageIdx = v && !v.done ? idx : -1;
+  const m = (k, s) => (document.querySelector(`[data-m="${k}"]`).textContent = s ?? "");
+  if (!v) return ORDER.forEach((k) => m(k, ""));
+  m("request", v.req ? `${v.req.messages?.length ?? 0} msgs · ${v.req.tools?.length ?? 0} tools` : "");
+  m("translate", v.tr ? `→ ${fmtN(v.tr.queryChars)} chars` : "");
+  m("session", v.ses ? `#${v.ses.sessionId} ${v.ses.warm ? "warm" : "cold"}` : "");
+  m("upstream", v.tr ? `${v.rec?.model ?? v.tr.model}${v.tC0 != null || v.tR0 != null ? ` · ${fmtMs((v.tR0 ?? v.tC0))}` : ""}` : "");
+  m("parse", v.calls ? `${v.calls.map((c) => c.function.name).join(", ")}` : v.rec ? "plain text" : "");
+  m("respond", v.res ? `${v.res.finish_reason} · ${fmtMs(v.res.totalMs)}` : v.err ? "error" : "");
+}
+function errorStage(v) { return v.rec ? "parse" : v.ses ? "upstream" : v.tr ? "session" : v.req ? "translate" : "request"; }
+function firePacket(from, to) {
+  const nodes = document.querySelectorAll(".node");
+  const pipe = $("pipeline").getBoundingClientRect();
+  const x = (i) => { const r = nodes[i].getBoundingClientRect(); return r.left + r.width / 2 - pipe.left; };
+  const p = document.createElement("div");
+  p.className = "packet";
+  $("pipeline").appendChild(p);
+  p.animate([{ left: `${x(from)}px`, opacity: 1 }, { left: `${x(to)}px`, opacity: 1 }], { duration: 420 + 140 * (to - from), easing: "cubic-bezier(.4,0,.2,1)" }).onfinish = () => p.remove();
+}
+
+// ---- list ----
+function status(v) {
+  if (v.err) return ['<span class="badge b-err">error</span>', "err"];
+  if (!v.done) return ['<span class="badge b-live">live</span>', "live"];
+  if (v.res?.finish_reason === "tool_calls") return [`<span class="badge b-tool">tool_calls</span>`, "tool"];
+  return ['<span class="badge b-stop">stop</span>', "stop"];
+}
+function renderList() {
+  const items = [...traces.values()].reverse();
+  $("countTxt").textContent = items.length;
+  if (!items.length) return;
+  $("list").innerHTML = items.map((t) => {
+    const v = view(t);
+    const when = new Date(v.startedAt).toLocaleTimeString([], { hour12: false });
+    const tools = v.calls ? v.calls.map((c) => c.function.name).join(", ") : v.req?.stream ? "stream" : "json";
+    return `<div class="req ${t.id === selected ? "sel" : ""}" data-id="${t.id}">
+      <div class="r1"><span class="model">${esc(v.rec?.model ?? v.tr?.model ?? v.req?.model ?? "…")}</span>${status(v)[0]}</div>
+      <div class="r2"><span>${when} · ${esc(tools)}</span><span>${v.tEnd != null ? fmtMs(v.tEnd) : "…"}</span></div></div>`;
+  }).join("");
+}
+$("list").addEventListener("click", (e) => {
+  const row = e.target.closest(".req");
+  if (!row) return;
+  selected = row.dataset.id;
+  setFollow(selected === [...traces.keys()].at(-1));
+  lastStageIdx = -1;
+  renderAll();
+});
+function setFollow(on) { follow = on; $("followBtn").classList.toggle("on", on); }
+$("followBtn").onclick = () => { setFollow(!follow); if (follow) { selected = [...traces.keys()].at(-1) ?? null; renderAll(); } };
+
+// ---- detail ----
+function card({ role, title, body, n, clamp = true, extra = "", attrs = "" }) {
+  return `<div class="card ${clamp && body.length > 360 ? "clamp" : ""} role-${role} ${extra}" ${attrs}>
+    <div class="ch"><span class="role">${esc(title ?? role)}</span><span class="n">${n ?? ""}</span></div><pre>${esc(body)}</pre></div>`;
+}
+
+function renderA(v) {
+  if (!v.req) return '<div class="hint">…</div>';
+  const r = v.req;
+  const meta = `<div class="meta">
+    <span class="chip">model <b>${esc(r.model)}</b></span>
+    <span class="chip">stream <b>${r.stream}</b></span>
+    ${r.reasoning_effort ? `<span class="chip">reasoning_effort <b>${esc(r.reasoning_effort)}</b></span>` : ""}
+    ${r.tool_choice ? `<span class="chip">tool_choice <b>${esc(typeof r.tool_choice === "string" ? r.tool_choice : r.tool_choice.function?.name)}</b></span>` : ""}
+  </div>`;
+  const tools = r.tools?.length ? `<div class="tools">${r.tools.map((n) => `<span class="chip">ƒ ${esc(n)}</span>`).join("")}</div>` : "";
+  const msgs = (r.messages ?? []).map((m, i) => {
+    let body = text(m.content);
+    if (m.tool_calls?.length) body += (body ? "\n" : "") + m.tool_calls.map((c) => `→ ${c.function.name}(${c.function.arguments})`).join("\n");
+    const title = m.role === "tool" ? `tool · ${m.tool_call_id ?? ""}` : m.role;
+    return card({ role: m.role, title, body: body || "(empty)", n: `[${i}] ${fmtN(body.length)}ch`, attrs: `data-src="${i}"` });
+  }).join("");
+  return meta + tools + msgs;
+}
+
+function renderB(v) {
+  if (!v.tr) return v.req ? '<div class="hint">translating…</div>' : "";
+  const t = v.tr;
+  const meta = `<div class="meta">
+    <span class="chip">model <b>${esc(t.model)}</b></span>
+    ${t.label ? `<span class="chip">${esc(t.label)}</span>` : ""}
+    <span class="chip">${t.free ? "<b>free</b>" : `cost <b>${t.score ?? "?"}</b>/1k`}</span>
+    <span class="chip">thinking <b>${esc(t.thinking)}</b></span>
+    ${v.ses ? `<span class="chip">session <b>#${v.ses.sessionId}</b> ${v.ses.warm ? "warm" : "cold"}</span>` : ""}
+  </div>`;
+  const warn = v.warning ? `<div class="note">${esc(v.warning)}</div>` : "";
+  const segs = t.segments.map((s) => {
+    const title = s.source === "tools" ? "function protocol (injected)" : s.source === "frame" ? "framing (added by gateway)" : `${s.role} ← messages[${s.source}]`;
+    return card({ role: s.role, title, body: s.text, n: `${fmtN(s.text.length)}ch`, extra: "seg", attrs: `data-src="${s.source}"` });
+  }).join("");
+  return meta + warn + `<div class="arrow">joined into one text field · ${fmtN(t.queryChars)} chars · POST /api/v2/chat/response</div>` + segs;
+}
+
+function renderC(v) {
+  if (!v.ses && !v.err) return v.tr ? '<div class="hint">acquiring session…</div>' : "";
+  const live = !v.done;
+  let html = "";
+  if (v.reasoning) html += `<div class="card stream reasoning role-system"><div class="ch"><span class="role">reasoning_data</span><span class="n">→ delta.reasoning_content · ${fmtN(v.reasoning.length)}ch</span></div><pre id="rBox" class="${live && v.tC0 == null ? "caret" : ""}">${esc(v.reasoning)}</pre></div>`;
+  if (v.content || (live && v.ses)) {
+    const isEnv = /^\s*[{`]/.test(v.content) && v.req?.tools?.length;
+    html += `<div class="card stream role-assistant"><div class="ch"><span class="role">data (type:string)</span><span class="n">${isEnv ? "held back: looks like an envelope" : "→ delta.content"} · ${fmtN(v.content.length)}ch</span></div><pre id="cBox" class="${live ? "caret" : ""}">${esc(v.content || (v.tR0 == null ? "waiting for first token…" : ""))}</pre></div>`;
+  }
+  if (v.rec) {
+    const rerouted = v.rec.rerouted ? `<div class="note">upstream answered with <b>${esc(v.rec.rerouted)}</b> instead of the requested model${v.rec.rerouted === "memory" ? " (routed to its long-term memory feature)" : ""}</div>` : "";
+    html += rerouted;
+    if (v.calls?.length) {
+      html += `<div class="arrow">envelope parsed → ${v.calls.length} tool call${v.calls.length > 1 ? "s" : ""}</div>`;
+      html += v.calls.map((c) => {
+        let args = c.function.arguments;
+        try { args = JSON.stringify(JSON.parse(args), null, 2); } catch {}
+        if (args.length > 1400) args = args.slice(0, 1400) + `\n… (${fmtN(args.length)} chars)`;
+        return `<div class="card call"><div class="ch"><span class="role">tool_calls[${c.index}] · ${esc(c.function.name)}</span><span class="n">${esc(c.id.slice(0, 14))}…</span></div><pre>${esc(args)}</pre></div>`;
+      }).join("");
+    } else if (v.done && !v.err) {
+      html += `<div class="arrow">plain text → choices[0].message.content</div>`;
+    }
+  }
+  if (v.res) {
+    const u = v.res.usage ?? {};
+    html += `<div class="final">
+      <div><small>finish_reason</small><b>${esc(v.res.finish_reason)}</b></div>
+      <div><small>model</small><b>${esc(v.res.model)}</b></div>
+      <div><small>points</small><b>${v.rec?.score ?? "–"}</b></div>
+      <div><small>first token</small><b>${fmtMs(v.res.firstTokenMs)}</b></div>
+      <div><small>total</small><b>${fmtMs(v.res.totalMs)}</b></div>
+      <div><small>tokens (est.)</small><b>${fmtN(u.prompt_tokens ?? 0)} → ${fmtN(u.completion_tokens ?? 0)}</b></div>
+    </div>`;
+  }
+  if (v.err) html += `<div class="note errbox">✕ ${esc(v.err.message)}</div>`;
+  return html;
+}
+
+function renderBar(v) {
+  const bar = $("bar");
+  if (!v) { bar.innerHTML = ""; $("totalTxt").textContent = "–"; return; }
+  const now = v.done ? v.tEnd : Date.now() - v.startedAt;
+  const total = Math.max(now, 1);
+  const pct = (a, b) => `left:${(a / total) * 100}%;width:${Math.max(((b - a) / total) * 100, 0.4)}%`;
+  const first = Math.min(v.tR0 ?? Infinity, v.tC0 ?? Infinity);
+  let html = "";
+  if (v.tSes != null) html += `<div class="seg" style="${pct(0, v.tSes)};background:var(--c-system)"></div>`;
+  if (v.tSes != null) html += `<div class="seg" style="${pct(v.tSes, first === Infinity ? now : first)};background:var(--faint);opacity:.6"></div>`;
+  if (v.tR0 != null) html += `<div class="seg" style="${pct(v.tR0, v.tC0 ?? (v.done ? v.tR1 : now))};background:var(--c-user)"></div>`;
+  if (v.tC0 != null) html += `<div class="seg" style="${pct(v.tC0, v.done ? (v.tC1 ?? now) : now)};background:var(--c-assistant)"></div>`;
+  bar.innerHTML = html;
+  $("totalTxt").textContent = fmtMs(now);
+}
+
+let lastRendered = { id: null, stage: null, events: 0 };
+function renderDetail(force = false) {
+  const t = selected && traces.get(selected);
+  if (!t) { renderPipeline(null); renderBar(null); return; }
+  const v = view(t);
+  renderPipeline(v);
+  renderBar(v);
+  $("aStat").textContent = v.req ? `${v.req.messages?.length ?? 0} messages` : "";
+  $("bStat").textContent = v.tr ? `${v.tr.segments.length} segments` : "";
+  $("cStat").textContent = v.rec?.model ? v.rec.model : v.done ? "" : "streaming";
+  const structural = t.events.filter((e) => e.stage !== "content" && e.stage !== "reasoning").length;
+  const keepScroll = !force && lastRendered.id === t.id;
+  if (force || lastRendered.id !== t.id || lastRendered.structural !== structural) {
+    const scrollA = $("colA").scrollTop, scrollB = $("colB").scrollTop;
+    $("colA").innerHTML = renderA(v);
+    $("colB").innerHTML = renderB(v);
+    if (keepScroll) { $("colA").scrollTop = scrollA; $("colB").scrollTop = scrollB; }
+  }
+  // Column C streams: patch text in place when only deltas changed.
+  const r = $("rBox"), c = $("cBox");
+  const sameShape = keepScroll && lastRendered.structural === structural && !!r === !!v.reasoning && !!c === !!(v.content || (!v.done && v.ses));
+  if (sameShape && (r || c)) {
+    if (r) { r.textContent = v.reasoning; r.scrollTop = r.scrollHeight; }
+    if (c) { c.textContent = v.content || "waiting for first token…"; c.scrollTop = c.scrollHeight; }
+  } else {
+    $("colC").innerHTML = renderC(v);
+    $("rBox") && ($("rBox").scrollTop = 1e9);
+    $("cBox") && ($("cBox").scrollTop = 1e9);
+    if (!v.done) $("colC").scrollTop = 1e9;
+  }
+  lastRendered = { id: t.id, structural };
+}
+
+function renderAll() { renderList(); renderDetail(true); }
+
+// hover links request cards to transcript segments
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-src]");
+  document.querySelectorAll(".card.hl").forEach((c) => c.classList.remove("hl"));
+  if (!el) return;
+  document.querySelectorAll(`[data-src="${el.dataset.src}"]`).forEach((c) => c.classList.add("hl"));
+});
+document.addEventListener("click", (e) => {
+  const c = e.target.closest(".card.clamp");
+  if (c) c.classList.remove("clamp");
+});
+
+// ---- live feed ----
+let raf = 0, listDirty = false;
+function schedule(list) {
+  listDirty ||= list;
+  if (raf) return;
+  raf = requestAnimationFrame(() => {
+    raf = 0;
+    if (listDirty) renderList();
+    listDirty = false;
+    renderDetail();
+  });
+}
+function connect() {
+  const es = new EventSource(`/trace/stream${qs}`);
+  es.addEventListener("hello", (m) => {
+    traces.clear();
+    for (const t of JSON.parse(m.data).traces) traces.set(t.id, { ...t, events: t.events.map((e) => ({ ...e, data: { ...e.data } })) });
+    if (follow || !traces.has(selected)) selected = [...traces.keys()].at(-1) ?? null;
+    $("liveDot").className = "dot ok"; $("liveTxt").textContent = "live";
+    renderAll();
+  });
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    const isNew = !traces.has(ev.traceId);
+    ingest(ev);
+    if (isNew) {
+      while (traces.size > 60) traces.delete(traces.keys().next().value);
+      if (follow) { selected = ev.traceId; lastStageIdx = 0; }
+    }
+    const structural = ev.stage !== "content" && ev.stage !== "reasoning";
+    if (ev.traceId === selected || isNew || structural) schedule(isNew || structural);
+  };
+  es.onerror = () => { $("liveDot").className = "dot err"; $("liveTxt").textContent = "reconnecting"; };
+}
+connect();
+
+async function health() {
+  try {
+    const h = await (await fetch("/v1/health")).json();
+    const left = h.token.exp ? new Date(h.token.exp) - Date.now() : 0;
+    $("tokenTxt").textContent = h.token.valid ? `${Math.floor(left / 3.6e6)}h${String(Math.floor(left / 6e4) % 60).padStart(2, "0")}m` : "refreshing";
+    $("poolTxt").textContent = `${h.sessions.idle}${h.sessions.pendingDelete ? ` · ${h.sessions.pendingDelete} to delete` : ""}`;
+  } catch { $("tokenTxt").textContent = "offline"; }
+}
+health();
+setInterval(health, 5000);
+setInterval(() => { const t = selected && traces.get(selected); if (t && !t.done) renderBar(view(t)); }, 200);
+</script>
+</body>
+</html>

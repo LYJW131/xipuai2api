@@ -1,0 +1,25 @@
+{
+  "name": "xipuai2api",
+  "version": "2.0.0",
+  "private": true,
+  "description": "OpenAI-compatible gateway over XIPU AI (君谋)",
+  "type": "module",
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "tui": "node src/tui.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/LYJW131/xipuai2api.git"
+  }
+}

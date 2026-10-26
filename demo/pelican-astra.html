@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>鹈鹕的单车时光</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100svh;display:grid;place-items:center;background:#f6f2e8;color:#294c4a;font-family:system-ui,sans-serif}main{width:min(960px,100%);padding:24px}header{display:flex;justify-content:space-between;align-items:center;gap:16px}small{letter-spacing:3px;color:#788b7e}h1{font-size:clamp(22px,4vw,36px);margin:8px 0 22px}button{border:1px solid #b7c6b7;border-radius:24px;background:transparent;color:inherit;padding:10px 18px;cursor:pointer}button:focus-visible{outline:3px solid #dc8956;outline-offset:4px}svg{display:block;width:100%;height:auto;border-radius:24px;background:#e2efe7}footer{text-align:center;font-size:13px;color:#788b7e;margin-top:18px}.spin{animation:spin 1.8s linear infinite;transform-origin:0 0}.bird{animation:bob 1.8s ease-in-out infinite}.cloud{animation:drift 9s ease-in-out infinite alternate}.paused *{animation-play-state:paused!important}@keyframes spin{to{transform:rotate(360deg)}}@keyframes bob{50%{transform:translateY(-3px)}}@keyframes drift{to{transform:translateX(22px)}}@media(prefers-reduced-motion:reduce){.spin,.bird,.cloud{animation:none}}
+</style>
+</head>
+<body>
+<main>
+<header><div><small>LITTLE RIDES · BIG DREAMS</small><h1>鹈鹕的单车时光</h1></div><button id="toggle" type="button" aria-pressed="false">暂停动画</button></header>
+<svg id="scene" viewBox="0 0 900 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+<title id="title">骑自行车的鹈鹕</title><desc id="desc">白色鹈鹕戴着绿色围巾，骑着自行车穿过郊野。两个车轮的辐条和橙色反光片持续旋转。</desc>
+<defs>
+<g id="wheel">
+<circle r="98" fill="#f6f2e8" fill-opacity=".5" stroke="#294c4a" stroke-width="10" />
+<circle r="89" fill="none" stroke="#fffdf6" stroke-width="3" />
+<g class="spin"><g stroke="#7b9990" stroke-width="2"><path d="M-87 0H87M0-87V87M-61-61L61 61M-61 61L61-61M-80-33L80 33M-33-80L33 80M-80 33L80-33M-33 80L33-80" /></g><rect x="-5" y="-79" width="10" height="22" rx="4" fill="#eaa353" /></g>
+<circle r="10" fill="#f6f2e8" stroke="#294c4a" stroke-width="5" />
+</g>
+</defs>
+<circle cx="725" cy="113" r="49" fill="#f4d990" />
+<g class="cloud" fill="#fffdf6" opacity=".85"><path d="M95 135Q81 114 108 109Q112 77 141 89Q166 76 180 108Q209 106 208 135Z" /><path d="M563 94Q550 76 572 72Q580 44 604 56Q626 46 638 72Q662 71 664 94Z" /></g>
+<path d="M0 367Q140 241 320 354T650 344T900 309V620H0Z" fill="#c6dccc" />
+<path d="M0 412Q182 333 380 407T900 380V620H0Z" fill="#aecab5" />
+<path d="M0 502Q470 463 900 499V620H0Z" fill="#eadfca" />
+<path d="M45 552H136M708 549H805M178 581H250M557 578H643" stroke="#cfbea3" stroke-width="4" stroke-linecap="round" />
+<g stroke="#729582" stroke-width="3" fill="none" stroke-linecap="round"><path d="M89 440l-9-19m9 19 10-26M792 447l-7-22m7 22 13-15M743 417l-5-16" /></g>
+<ellipse cx="461" cy="534" rx="285" ry="17" fill="#819d88" opacity=".2" />
+<g transform="translate(277 430)"><use href="#wheel" /></g>
+<g transform="translate(647 430)"><use href="#wheel" /></g>
+<!-- Bicycle frame -->
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+<path d="M277 430L373 288L440 430ZM373 288H587L440 430M587 288L647 430" stroke="#368879" stroke-width="10" />
+<path d="M373 288L361 258M587 288L574 244Q571 228 589 227H621" stroke="#294c4a" stroke-width="7" />
+<path d="M335 259H386M610 227H631" stroke="#294c4a" stroke-width="12" />
+<path d="M277 430H440" stroke="#7f9e8d" stroke-width="4" />
+<path d="M426 338L465 367L422 410" stroke="#d99a4b" stroke-width="12" />
+</g>
+<!-- Pelican silhouette, pouch and wing -->
+<g class="bird" stroke-linejoin="round">
+<path d="M333 288L277 249L301 304Z" fill="#e5e9df" stroke="#496b60" stroke-width="3" />
+<path d="M307 266Q300 325 365 337Q425 359 470 309Q495 285 487 242L484 188Q485 167 508 165Q534 163 538 144Q543 111 514 101Q480 92 463 122Q449 144 451 196Q452 232 421 245Q367 228 331 243Z" fill="#fffdf4" stroke="#496b60" stroke-width="3" />
+<path d="M323 289Q362 346 425 306Q448 291 443 267Q399 299 343 268" fill="#dce5da" stroke="#819b89" stroke-width="3" stroke-linecap="round" />
+<path d="M343 289Q377 317 413 294" fill="none" stroke="#a4b8a3" stroke-width="3" stroke-linecap="round" />
+<path d="M520 147L684 149Q590 223 522 181Q511 169 520 147Z" fill="#efbc69" stroke="#a9783e" stroke-width="3" />
+<path d="M528 133L691 147Q696 152 682 155L521 152Z" fill="#f3d17f" stroke="#a9783e" stroke-width="3" />
+<path d="M535 166Q572 193 618 173" fill="none" stroke="#d89c50" stroke-width="3" stroke-linecap="round" />
+<circle cx="508" cy="128" r="6" fill="#294c4a" /><circle cx="510" cy="126" r="2" fill="white" />
+<path d="M494 115Q501 109 511 113" fill="none" stroke="#496b60" stroke-width="3" stroke-linecap="round" />
+<path d="M452 199Q468 209 487 199L489 215Q469 226 452 215Z" fill="#368879" />
+<path d="M456 209Q425 203 405 217L382 205L387 229Q426 238 461 218Z" fill="#368879" />
+<path d="M451 251Q486 263 513 245L578 232" fill="none" stroke="#496b60" stroke-width="18" stroke-linecap="round" />
+<path d="M451 250Q486 260 513 243L577 231" fill="none" stroke="#fffdf4" stroke-width="12" stroke-linecap="round" />
+<path d="M398 330L384 371L454 444" fill="none" stroke="#d99a4b" stroke-width="13" stroke-linecap="round" />
+<path d="M454 435L478 449L446 451Z" fill="#e9ac59" stroke="#a9783e" stroke-width="3" />
+</g>
+<circle cx="440" cy="430" r="19" fill="#f6f2e8" stroke="#294c4a" stroke-width="5" />
+<path d="M440 430L464 450" stroke="#294c4a" stroke-width="6" /><path d="M449 453H483" stroke="#294c4a" stroke-width="7" stroke-linecap="round" />
+</svg>
+<footer>迎着风，慢慢骑。今天也有好风景。</footer>
+</main>
+<script>
+const button=document.getElementById('toggle'),scene=document.getElementById('scene'),reduced=matchMedia('(prefers-reduced-motion: reduce)');
+function sync(){const paused=scene.classList.contains('paused');button.disabled=reduced.matches;button.textContent=reduced.matches?'已减少动态效果':paused?'继续骑行':'暂停动画';button.setAttribute('aria-pressed',String(paused||reduced.matches));}
+button.addEventListener('click',()=>{scene.classList.toggle('paused');sync()});reduced.addEventListener('change',sync);sync();
+</script>
+</body>
+</html>
