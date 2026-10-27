@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { totp } from "../src/auth.ts";
 import { parseEnvFile } from "../src/config.ts";
-import { ToolReplySniffer, buildQuery, buildSegments, flattenMessages, mapThinking, parseToolCalls, toolPrompt } from "../src/protocol.ts";
+import { ToolReplySniffer, buildQuery, buildSegments, fitToBudget, flattenMessages, mapThinking, parseToolCalls, toolPrompt, truncateMiddle } from "../src/protocol.ts";
 
 test("parseToolCalls: bare, fenced, embedded, braces inside strings", () => {
   const env = '{"tool_calls":[{"name":"write","arguments":{"path":"a.html","content":"<b>{x}</b>"}}]}';
@@ -92,4 +92,36 @@ test("parseToolCalls reads DeepSeek DSML markup", () => {
   const sniff = new ToolReplySniffer();
   assert.equal(sniff.push("<｜DSML｜function_calls>"), "");
   assert.equal(sniff.mode, "buffer");
+});
+
+test("truncateMiddle respects a UTF-8 byte budget", () => {
+  const text = "网关".repeat(20_000);
+  const out = truncateMiddle(text, 10_000);
+  assert.ok(Buffer.byteLength(out) <= 10_000);
+  assert.ok(out.startsWith("网关") && out.endsWith("网关") && out.includes("chars omitted"));
+  assert.equal(truncateMiddle("short", 100), "short");
+});
+
+test("fitToBudget keeps the task, the latest turns, functions and the reply cue", () => {
+  const big = (c: string, n: number) => c.repeat(n);
+  const call = (id: string) => ({ role: "assistant" as const, content: null, tool_calls: [{ id, type: "function" as const, function: { name: "bash", arguments: "{}" } }] });
+  const req = {
+    messages: [
+      { role: "system" as const, content: big("系统", 6_000) },
+      { role: "user" as const, content: "TASK: draw a pelican" },
+      call("a"),
+      { role: "tool" as const, tool_call_id: "a", content: big("x", 30_000) },
+      call("b"),
+      { role: "tool" as const, tool_call_id: "b", content: big("日志", 15_000) },
+      { role: "user" as const, content: "LATEST: hi" },
+    ],
+    tools: [{ type: "function" as const, function: { name: "bash" } }],
+  };
+  const built = buildSegments(req);
+  const { segments, trim } = fitToBudget(built, 20_000);
+  const q = segments.map((s) => s.text).join("\n\n");
+  assert.ok(trim && trim.bytesBefore > 20_000 && trim.bytesAfter <= 20_000, JSON.stringify(trim));
+  assert.ok(Buffer.byteLength(q) <= 20_000);
+  for (const must of ["TASK: draw a pelican", "LATEST: hi", "## Functions", "responding to the last entry"]) assert.ok(q.includes(must), must);
+  assert.equal(fitToBudget(built, 10_000_000).trim, null);
 });

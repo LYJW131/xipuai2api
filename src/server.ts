@@ -7,7 +7,7 @@ import path from "node:path";
 import { AuthError, TokenManager } from "./auth.ts";
 import { ROOT, config, loadCredentials } from "./config.ts";
 import { ModelCatalog } from "./models.ts";
-import { ToolReplySniffer, buildSegments, mapThinking, parseToolCalls, toOpenAICalls, usageOf, validateRequest } from "./protocol.ts";
+import { ToolReplySniffer, buildSegments, fitToBudget, mapThinking, parseToolCalls, toOpenAICalls, usageOf, validateRequest } from "./protocol.ts";
 import type { ChatRequest, ToolCall, Usage } from "./protocol.ts";
 import { SessionPool } from "./sessions.ts";
 import { TraceHub } from "./trace.ts";
@@ -179,8 +179,9 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
     });
 
     const model = await resolveModel(requestedModel, tracer);
-    const segments = buildSegments(body);
+    const { segments, trim } = fitToBudget(buildSegments(body), config.upstreamMaxBytes);
     const query = segments.map((s) => s.text).join("\n\n");
+    if (trim) log(`[chat] ${id} trimmed query ${trim.bytesBefore} -> ${trim.bytesAfter} bytes (${trim.truncated} truncated, ${trim.dropped} dropped)`);
     const thinking = mapThinking(body.reasoning_effort);
     tracer.add("translate", {
       model: model.value,
@@ -191,6 +192,7 @@ async function handleChat(req: http.IncomingMessage, res: http.ServerResponse): 
       online: !!body.online,
       segments,
       queryChars: query.length,
+      trim,
       toolEnvelope: hasTools,
     });
 

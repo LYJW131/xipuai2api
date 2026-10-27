@@ -331,11 +331,12 @@ function renderB(v) {
     ${v.ses ? `<span class="chip">session <b>#${v.ses.sessionId}</b> ${v.ses.warm ? "warm" : "cold"}</span>` : ""}
   </div>`;
   const warn = v.warning ? `<div class="note">${esc(v.warning)}</div>` : "";
+  const trim = t.trim ? `<div class="note">trimmed ${fmtN(t.trim.bytesBefore)} → ${fmtN(t.trim.bytesAfter)} bytes to fit the 64 KB upstream limit · ${t.trim.truncated} shortened · ${t.trim.dropped} dropped</div>` : "";
   const segs = t.segments.map((s) => {
     const title = s.source === "tools" ? "function protocol (injected)" : s.source === "frame" ? "framing (added by gateway)" : `${s.role} ← messages[${s.source}]`;
     return card({ role: s.role, title, body: s.text, n: `${fmtN(s.text.length)}ch`, extra: "seg", attrs: `data-src="${s.source}"` });
   }).join("");
-  return meta + warn + `<div class="arrow">joined into one text field · ${fmtN(t.queryChars)} chars · POST /api/v2/chat/response</div>` + segs;
+  return meta + warn + trim + `<div class="arrow">joined into one text field · ${fmtN(t.queryChars)} chars · POST /api/v2/chat/response</div>` + segs;
 }
 
 function renderC(v) {

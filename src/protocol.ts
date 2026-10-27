@@ -203,6 +203,82 @@ export function buildSegments(req: ChatRequest): Segment[] {
   ];
 }
 
+// ---- upstream size limit ----
+
+// XIPU stores the message text in a MySQL TEXT column: anything over 65,535
+// UTF-8 bytes fails with "Generation failed" for every model. Long agent
+// sessions (big tool outputs) cross that quickly, so trim to a byte budget,
+// cheapest losses first.
+export interface TrimReport {
+  bytesBefore: number;
+  bytesAfter: number;
+  truncated: number; // segments shortened in the middle
+  dropped: number; // early conversation entries removed
+}
+
+const SEP = "\n\n";
+const bytes = (s: string) => Buffer.byteLength(s, "utf8");
+const totalBytes = (segs: Segment[]) => segs.reduce((n, s) => n + bytes(s.text), 0) + SEP.length * Math.max(0, segs.length - 1);
+
+// Keeps the head and tail of `text` within `max` bytes, marking the cut.
+export function truncateMiddle(text: string, max: number): string {
+  if (bytes(text) <= max) return text;
+  const chars = [...text];
+  const marker = (n: number) => `\n…[${n} chars omitted to fit the upstream size limit]…\n`;
+  let keep = Math.max(0, Math.floor((chars.length * (max - 80)) / bytes(text)));
+  for (;;) {
+    const head = Math.ceil(keep * 0.6);
+    const tail = keep - head;
+    const out = chars.slice(0, head).join("") + marker(chars.length - keep) + (tail ? chars.slice(-tail).join("") : "");
+    if (bytes(out) <= max || keep === 0) return out;
+    keep = Math.floor(keep * 0.95);
+  }
+}
+
+export function fitToBudget(segments: Segment[], maxBytes: number): { segments: Segment[]; trim: TrimReport | null } {
+  const before = totalBytes(segments);
+  if (before <= maxBytes) return { segments, trim: null };
+  let segs = segments.map((s) => ({ ...s }));
+  let truncated = 0;
+  let dropped = 0;
+  const over = () => totalBytes(segs) - maxBytes;
+  const shorten = (s: Segment, cap: number) => {
+    if (bytes(s.text) > cap) {
+      s.text = truncateMiddle(s.text, cap);
+      truncated++;
+    }
+  };
+  const convo = () => segs.filter((s) => typeof s.source === "number" && !isSystem(s.role));
+
+  // 1. Tool results, oldest first; the newest keeps a larger share.
+  const results = convo().filter((s) => s.role === "tool");
+  for (const [i, s] of results.entries()) {
+    if (over() <= 0) break;
+    shorten(s, Math.max(i === results.length - 1 ? 12_000 : 1_500, bytes(s.text) - over()));
+  }
+  // 2. Drop early entries, keeping the first user message and the latest two.
+  const entries = convo();
+  const firstUser = entries.find((s) => s.role === "user");
+  const droppable = entries.slice(0, -2).filter((s) => s !== firstUser);
+  for (const s of droppable) {
+    if (over() <= 0) break;
+    segs = segs.filter((x) => x !== s);
+    dropped++;
+  }
+  if (dropped) {
+    const at = segs.indexOf(firstUser ?? segs.find((s) => s.source === "frame" && s.text === "<conversation>")!) + 1;
+    segs.splice(at, 0, { source: "frame", role: "frame", text: `[… ${dropped} earlier conversation entries omitted to fit the upstream size limit …]` });
+  }
+  // 3. Long instructions (e.g. skill catalogs), then 4. whatever is still largest.
+  for (const s of segs.filter((x) => isSystem(x.role))) if (over() > 0) shorten(s, Math.max(4_000, bytes(s.text) - over()));
+  while (over() > 0) {
+    const big = segs.filter((s) => s.role !== "protocol" && s.source !== "frame").sort((a, b) => bytes(b.text) - bytes(a.text))[0];
+    if (!big || bytes(big.text) <= 600) break;
+    shorten(big, Math.max(500, bytes(big.text) - over()));
+  }
+  return { segments: segs, trim: { bytesBefore: before, bytesAfter: totalBytes(segs), truncated, dropped } };
+}
+
 export function buildQuery(req: ChatRequest): string {
   return buildSegments(req)
     .map((s) => s.text)

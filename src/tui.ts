@@ -121,7 +121,7 @@ interface View {
   startedAt: number;
   done: boolean;
   req?: { model: string; stream: boolean; messages: Msg[]; tools: string[]; reasoning_effort: string | null };
-  tr?: { model: string; label: string | null; free: boolean | null; score: number | null; thinking: string; queryChars: number; segments: { source: number | "tools" | "frame"; role: string; text: string }[] };
+  tr?: { model: string; label: string | null; free: boolean | null; score: number | null; thinking: string; queryChars: number; trim?: { bytesBefore: number; bytesAfter: number; truncated: number; dropped: number } | null; segments: { source: number | "tools" | "frame"; role: string; text: string }[] };
   ses?: { sessionId: number; warm: boolean; retry?: string };
   retries: string[];
   reasoning: string;
@@ -362,6 +362,10 @@ function render(): string {
       trn.push(line(W, ["  ▌", roleColor(s.role)], [pad(label, 9), roleColor(s.role)], [pad(fmtN(s.text.length), 7), C.faint], [oneLine(s.text), C.muted]));
     });
     trn.push(line(W, ["  └▶ ", C.accent], [`one text field, ${fmtN(v.tr.queryChars)} chars → POST /api/v2/chat/response`, C.faint]));
+    if (v.tr.trim) {
+      const t = v.tr.trim;
+      trn.push(line(W, ["  ✂ ", C.warn], [`trimmed ${fmtN(t.bytesBefore)} → ${fmtN(t.bytesAfter)} bytes for the 64 KB upstream limit (${t.truncated} shortened, ${t.dropped} dropped)`, C.warn]));
+    }
   }
 
   // ④ response (computed before ③ so the stream gets the leftover rows)

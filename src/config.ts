@@ -20,6 +20,8 @@ export const config = {
   modelCacheTtlMs: int("MODEL_CACHE_TTL_MS", 10 * 60_000),
   upstreamIdleTimeoutMs: int("UPSTREAM_IDLE_TIMEOUT_MS", 120_000),
   maxBodyBytes: int("MAX_BODY_BYTES", 16 * 1024 * 1024),
+  // Upstream rejects message text over 65,535 UTF-8 bytes (MySQL TEXT); keep a margin.
+  upstreamMaxBytes: int("UPSTREAM_MAX_BYTES", 64_000),
   // Debug: write every chat request body here as <id>.json for replay.
   dumpDir: process.env.DUMP_DIR || "",
 } as const;

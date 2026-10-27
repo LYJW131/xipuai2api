@@ -51,6 +51,7 @@ launchctl kickstart -k gui/$UID/com.xipuai.openai-proxy   # 重启（SIGTERM 时
 | `DEFAULT_MODEL` | `deepseek-v4-flash-local` | 请求没带 `model` 时使用 |
 | `SESSION_POOL_SIZE` | `2` | 预热会话数 |
 | `TOKEN_CACHE` | `./.token-cache.json` | Jm-Token 缓存（0600），重启不必重新 MFA 登录 |
+| `UPSTREAM_MAX_BYTES` | `64000` | 发给上游的单段文本字节上限（上游硬限 65,535 字节） |
 | `DUMP_DIR` | 空 | 调试用：把每个请求的原始 JSON 存成 `<id>.json`，方便回放 |
 
 ## 端点
@@ -82,6 +83,7 @@ node src/tui.ts            # 或 npm run tui；默认连 http://127.0.0.1:4620
 ## 上游的坑（实测）
 
 - **不是真正无状态**：君谋有账号级长期记忆，会把近期对话摘要注入到新会话里（包括经网关发出的请求）；含「记住」之类的消息会被路由到 `memory` 模型。没有 API 可以关闭或清除，网关在 trace 里标出这类改路由。
+- **单次输入 65,535 字节上限**：超过 65,535 个 UTF-8 字节（阈值正好是 MySQL `TEXT` 字段的上限，推测是上游存消息原文的字段）对所有模型都直接返回 "Generation failed"（和模型上下文无关；约 1.6–2 万 token）。长 agent 会话很快就会撞上，网关按损失从小到大裁剪到 `UPSTREAM_MAX_BYTES` 以内：先截断旧的工具结果（保留头尾），再丢最早的对话轮次（保留首条用户消息和最近两条），再截系统提示，trace 里会标出裁了多少。客户端最好也把上下文窗口设小一点（pi 用 24k）让它自己先压缩。
 - **单次回复约 120 秒硬上限**：上游在 ~120s 时重置 HTTP/2 流。高思考强度 + 难题可能超时，网关会返回明确的错误提示。
 - **限流**：并发建会话/对话会返回 "Request too fast"，"Generation failed. Please try again later" 也时有发生；只要还没向客户端输出任何内容，网关会自动退避重试。
 - **登录**：code 换 token 偶发 "获取token失败"，会自动重试；token 有效期 8 小时，401/400/403 时自动重登并重放请求。
@@ -92,7 +94,7 @@ node src/tui.ts            # 或 npm run tui；默认连 http://127.0.0.1:4620
 
 ## pi 接入
 
-`~/.pi/agent/models.json` 里的 `xipuai` provider（`openai-completions`，`baseUrl: http://127.0.0.1:4620/v1`），`thinkingLevelMap` 把 pi 的思考档位映射到 `reasoning_effort`：
+`~/.pi/agent/models.json` 里的 `xipuai` provider（`openai-completions`，`baseUrl: http://127.0.0.1:4620/v1`），`thinkingLevelMap` 把 pi 的思考档位映射到 `reasoning_effort`，`contextWindow` 设为 24000，让 pi 在撞上上游 64KB 限制前自己压缩历史：
 
 ```bash
 pi --model xipuai/DeepSeek-V4.1-Flash
